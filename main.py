@@ -22,6 +22,7 @@ class Main(QMainWindow):
         self.IndiReal.ReceiveRTData.connect(self.ReceiveRTData)
 
         # 신한i Indi 자동로그인
+        # TODO : 입력 받기
         while True:
             login = self.IndiTR.StartIndi('ID',
                                           'PASS',
@@ -30,6 +31,10 @@ class Main(QMainWindow):
             print(login)
             if login:
                 break
+
+        # TODO : 입력 받기
+        self.AccountID = "AccountID"
+        self.AccountPass = "AccountPass"
 
     def ReceiveData(self, rqid):
         if self.rqidList[rqid] == "stock_mst":
@@ -44,6 +49,9 @@ class Main(QMainWindow):
             self.AccountLookUp()
         if self.rqidList[rqid] == "SABA101U1":
             self.order()
+
+        if self.rqidList[rqid] == "Rebalancing":
+            self.rebalancing()
 
         self.rqidList.__delitem__(rqid)
 
@@ -104,25 +112,26 @@ class Main(QMainWindow):
         rqid = self.IndiTR.dynamicCall("RequestData()")
         self.rqidList[rqid] = "AccountList"
 
-    def req_AccountLookUp(self, AccountNum, AccountPass):
+    def req_AccountLookUp(self):
         ret = self.IndiTR.dynamicCall("SetQueryName(QString)", "SABA200QB")
-        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 0, AccountNum)  # 계좌번호
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 0, self.AccountID)  # 계좌번호
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 1, "01")  # 상품구분 항상 '01'
-        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 2, AccountPass)  # 비밀번호
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 2, self.AccountPass)  # 비밀번호
         rqid = self.IndiTR.dynamicCall("RequestData()")  # 데이터 요청
         self.rqidList[rqid] = "SABA200QB"
 
-    def req_order(self, account_num, pwd, code, price, count, order_type, call_type):
+    # TODO : 경우에 따른 안자값 불필요 제거 - 오버로딩 하던가?
+    def req_order(self, code, price, count, order_type, call_type):
         ret = self.IndiTR.dynamicCall("SetQueryName(QString)", "SABA101U1")
-        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 0, str(account_num))  # 계좌번호
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 0, self.AccountID)  # 계좌번호
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 1, "01")  # 상품구분
-        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 2, str(pwd))  # 비밀번호
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 2, self.AccountPass)  # 비밀번호
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 5, '0')  # 선물대용매도구분
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 6, '00')  # 신용거래구분
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 7, str(order_type))  # 매수매도 구분
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 8, 'A' + str(code))  # 종목코드
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 9, str(count))  # 주문수량
-        #ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 10, str(price))  # 주문가격
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 10, str(price))  # 주문가격
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 11, '1')  # 정규장
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 12, call_type)  # 호가유형, 1: 시장가, X:최유리, Y:최우선
         ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 13, '0')  # 주문조건, 0:일반, 3:IOC, 4:FOK
@@ -133,6 +142,14 @@ class Main(QMainWindow):
         # 요청한 ID를 저장합니다.
         self.rqidList[rqid] = "SABA101U1"
         print("매매TR요청 : ", rqid)
+
+    def req_rebalancing(self):
+        ret = self.IndiTR.dynamicCall("SetQueryName(QString)", "SABA200QB")
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 0, self.AccountID)  # 계좌번호
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 1, "01")  # 상품구분 항상 '01'
+        ret = self.IndiTR.dynamicCall("SetSingleData(int, QString)", 2, self.AccountPass)  # 비밀번호
+        rqid = self.IndiTR.dynamicCall("RequestData()")  # 데이터 요청
+        self.rqidList[rqid] = "Rebalancing"
 
     # =================================================================================
 
@@ -196,7 +213,6 @@ class Main(QMainWindow):
 
         # 실시간 등록
         ret = self.IndiReal.dynamicCall("RequestRTReg(QString, QString)", "SC", DATA['CODE'])
-        print(ret, DATA)
 
     def AccountList(self):
         count = self.IndiTR.dynamicCall("GetMultiRowCount()")
@@ -208,6 +224,8 @@ class Main(QMainWindow):
             DATA['NAME'] = self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 1)  # 종목명
             result.append(DATA)
             print(DATA['CODE'], DATA['NAME'])
+
+        return result
 
     def AccountLookUp(self):
         nCnt = self.IndiTR.dynamicCall("GetMultiRowCount()")
@@ -225,7 +243,8 @@ class Main(QMainWindow):
             DATA['CREDIT_NUM'] = int(self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 7))  # 신용잔고수량
             DATA['KOSPI_NUM'] = int(self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 8))  # 코스피대용수량
             result.append(DATA)
-            print(DATA)
+
+        return result
 
     def order(self):
         DATA = {}
@@ -236,8 +255,38 @@ class Main(QMainWindow):
         DATA['Msg3'] = self.IndiTR.dynamicCall("GetSingleData(int)", 5)  # 메시지3
         print("매수 및 매도 주문결과 :", DATA)
 
+    def rebalancing(self):
+        result = self.AccountLookUp()
+        sum = 0
+        cash_ratio = 0.0
+
+        for i in range(0, len(result)):
+            sum += result[i]['CURRENT_PRC'] * result[i]['NUM']
+
+        average = sum / len(result)
+        average *= (1 - cash_ratio)
+
+        for i in range(0, len(result)):
+            total = result[i]['CURRENT_PRC'] * result[i]['NUM']
+            if total > average:
+                sell_amount = (total - average) / result[i]['CURRENT_PRC']
+                print("판매 : ", result[i]['NAME'], " 개수 : ", sell_amount)
+                # TODO : 판매 코드 구현 적용
+                # 매수 1호가에 지정가로 던짐
+                # self.req_order(result[i]['ISIN_CODE'], result[i]['CURRENT_PRC'], sell_amount, 1, 2)
+
+        for i in range(0, len(result)):
+            total = result[i]['CURRENT_PRC'] * result[i]['NUM']
+            if total < average:
+                buy_amount = (average - total) / result[i]['CURRENT_PRC']
+                print("구매 : ", result[i]['NAME'], " 개수 : ", buy_amount)
+                # TODO : 판매 코드 구현 적용
+                # 매도 1호가에 지정가로 던짐
+                # self.req_order(result[i]['ISIN_CODE'], result[i]['CURRENT_PRC'], buy_amount, 2, 2)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     Indi = Main()
+    Indi.req_rebalancing()
     app.exec_()
