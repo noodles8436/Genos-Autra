@@ -1,13 +1,20 @@
 import sys
+import time
+
 from PyQt5.QAxContainer import *
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QMainWindow
+
+from Analayzer import Analayzer
 
 
 class Main(QMainWindow):
 
     def __init__(self):
         super().__init__()
+
+        # Sinhan indi Connection
+        self.isActivated = False
 
         # 일반 TR OCX
         self.IndiTR = QAxWidget("GIEXPERTCONTROL.GiExpertControlCtrl.1")
@@ -21,6 +28,9 @@ class Main(QMainWindow):
         # Real 관련 변수
         self.IndiReal.ReceiveRTData.connect(self.ReceiveRTData)
 
+        # Analyzer
+        self.Analyzer = Analayzer()
+
         # 신한i Indi 자동로그인
         # TODO : 입력 받기
         while True:
@@ -30,11 +40,14 @@ class Main(QMainWindow):
                                           'C:/SHINHAN-i/indi/giexpertstarter.exe')
             print(login)
             if login:
-                break
+                time.sleep(10)
+                if self.isActivated:
+                    break
+
 
         # TODO : 입력 받기
-        self.AccountID = "AccountID"
-        self.AccountPass = "AccountPass"
+        self.AccountID = "ACCID"
+        self.AccountPass = "ACCPASS"
 
     def ReceiveData(self, rqid):
         if self.rqidList[rqid] == "stock_mst":
@@ -58,20 +71,31 @@ class Main(QMainWindow):
     def ReceiveRTData(self, RealType):
         if RealType == "SC":
             DATA = {}
-            DATA['ISIN_CODE'] = self.IndiReal.dynamicCall("GetSingleData(int)", 0)  # 표준코드
-            DATA['CODE'] = self.IndiReal.dynamicCall("GetSingleData(int)", 1)  # 단축코드
-            DATA['Time'] = self.IndiReal.dynamicCall("GetSingleData(int)", 2)  # 채결시간
-            DATA['Close'] = self.IndiReal.dynamicCall("GetSingleData(int)", 3)  # 현재가
-            DATA['Vol'] = self.IndiReal.dynamicCall("GetSingleData(int)", 7)  # 누적거래량
-            DATA['TRADING_VALUE'] = self.IndiReal.dynamicCall("GetSingleData(int)", 8)  # 누적거래대금
-            DATA['ContQty'] = self.IndiReal.dynamicCall("GetSingleData(int)", 9)  # 단위채결량
-            DATA['Open'] = self.IndiReal.dynamicCall("GetSingleData(int)", 10)  # 시가
-            DATA['High'] = self.IndiReal.dynamicCall("GetSingleData(int)", 11)  # 고가
-            DATA['Low'] = self.IndiReal.dynamicCall("GetSingleData(int)", 12)  # 저가
+            DATA['ISIN_CODE'] = self.IndiTR.dynamicCall("GetSingleData(int)", 0)  # 표준코드
+            DATA['CODE'] = self.IndiTR.dynamicCall("GetSingleData(int)", 1)  # 단축코드
+            DATA['Time'] = self.IndiTR.dynamicCall("GetSingleData(int)", 2)  # 채결시간
+            DATA['Close'] = self.IndiTR.dynamicCall("GetSingleData(int)", 3)  # 현재가
+            DATA['DCY'] = self.IndiTR.dynamicCall("GetSingleData(int)", 4)  # 전일대비구분
+            DATA['CY'] = self.IndiTR.dynamicCall("GetSingleData(int)", 5)  # 전일대비
+            DATA['RCY'] = self.IndiTR.dynamicCall("GetSingleData(int)", 6)  # 전일대비율
+            DATA['Vol'] = self.IndiTR.dynamicCall("GetSingleData(int)", 7)  # 누적거래량
+            DATA['TRADING_VALUE'] = self.IndiTR.dynamicCall("GetSingleData(int)", 8)  # 누적거래대금
+            DATA['ContQty'] = self.IndiTR.dynamicCall("GetSingleData(int)", 9)  # 단위채결량
+            DATA['Open'] = self.IndiTR.dynamicCall("GetSingleData(int)", 10)  # 시가
+            DATA['High'] = self.IndiTR.dynamicCall("GetSingleData(int)", 11)  # 고가
+            DATA['Low'] = self.IndiTR.dynamicCall("GetSingleData(int)", 12)  # 저가
+            DATA['POT'] = self.IndiTR.dynamicCall("GetSingleData(int)", 22)  # 거래강도
+            DATA['COP'] = self.IndiTR.dynamicCall("GetSingleData(int)", 24)  # 체결강도
+            DATA['DOC'] = self.IndiTR.dynamicCall("GetSingleData(int)", 25)  # 체결 매도매수 구분
             print(DATA)
+            self.Analyzer.check(DATA)
 
     def ReceiveSysMsg(self, MsgID):
         print('System Message Received = ', MsgID)
+        if MsgID == 11 or MsgID == 7:
+            self.isActivated = True
+        if MsgID == 10 or MsgID == 3:
+            self.isActivated = False
 
     # =================================================================================
 
@@ -159,7 +183,6 @@ class Main(QMainWindow):
 
         for i in range(0, count):
             DATA = {}
-
             DATA['ISIN_CODE'] = self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 0)  # 표준코드
             DATA['CODE'] = self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 1)  # 단축코드
             DATA['MARKET'] = self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 2)  # 장구분
@@ -175,8 +198,10 @@ class Main(QMainWindow):
             DATA['CREDIT'] = self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 12)  # 신용증거금 구분
             DATA['ETF'] = self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 13)  # ETF 구분
             DATA['PART'] = self.IndiTR.dynamicCall("GetMultiData(int, int)", i, 14)  # 소속구분
-
+            self.req_SC(DATA['CODE'])
             result.append(DATA)
+
+        self.Analyzer.setTotalStockList(result)
 
     def TR_SCAHRT(self):
         count = self.IndiTR.dynamicCall("GetMultiRowCount()")
@@ -204,12 +229,18 @@ class Main(QMainWindow):
         DATA['CODE'] = self.IndiTR.dynamicCall("GetSingleData(int)", 1)  # 단축코드
         DATA['Time'] = self.IndiTR.dynamicCall("GetSingleData(int)", 2)  # 채결시간
         DATA['Close'] = self.IndiTR.dynamicCall("GetSingleData(int)", 3)  # 현재가
+        DATA['DCY'] = self.IndiTR.dynamicCall("GetSingleData(int)", 4)  # 전일대비구분
+        DATA['CY'] = self.IndiTR.dynamicCall("GetSingleData(int)", 5)  # 전일대비
+        DATA['RCY'] = self.IndiTR.dynamicCall("GetSingleData(int)", 6)  # 전일대비율
         DATA['Vol'] = self.IndiTR.dynamicCall("GetSingleData(int)", 7)  # 누적거래량
         DATA['TRADING_VALUE'] = self.IndiTR.dynamicCall("GetSingleData(int)", 8)  # 누적거래대금
         DATA['ContQty'] = self.IndiTR.dynamicCall("GetSingleData(int)", 9)  # 단위채결량
         DATA['Open'] = self.IndiTR.dynamicCall("GetSingleData(int)", 10)  # 시가
         DATA['High'] = self.IndiTR.dynamicCall("GetSingleData(int)", 11)  # 고가
         DATA['Low'] = self.IndiTR.dynamicCall("GetSingleData(int)", 12)  # 저가
+        DATA['POT'] = self.IndiTR.dynamicCall("GetSingleData(int)", 22)  # 거래강도
+        DATA['COP'] = self.IndiTR.dynamicCall("GetSingleData(int)", 24)  # 체결강도
+        DATA['DOC'] = self.IndiTR.dynamicCall("GetSingleData(int)", 25)  # 체결 매도매수 구분
 
         # 실시간 등록
         ret = self.IndiReal.dynamicCall("RequestRTReg(QString, QString)", "SC", DATA['CODE'])
@@ -284,9 +315,12 @@ class Main(QMainWindow):
                 # 매도 1호가에 지정가로 던짐
                 # self.req_order(result[i]['ISIN_CODE'], result[i]['CURRENT_PRC'], buy_amount, 2, 2)
 
+    # ==================================================================================
+
+    # TODO : GUI 구현 영역
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     Indi = Main()
-    Indi.req_rebalancing()
     app.exec_()
